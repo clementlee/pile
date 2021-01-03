@@ -1,12 +1,12 @@
-use std::path::Path;
+use serde::{Deserialize, Serialize};
 
-struct StorageLocation {
-    mountpoint: String,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Config {
+    pub drive: Vec<StorageLocation>,
 }
-/// A file is he
-#[derive(Debug)]
-struct File {
-    path: Box<Path>,
-    hash: String,
-    size: u64,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StorageLocation {
+    pub name: String,
+    pub mountpoint: String,
+    pub size: String,
 }
