@@ -10,3 +10,10 @@ pub struct StorageLocation {
     pub mountpoint: String,
     pub size: String,
 }
+
+#[derive(Debug)]
+pub struct File {
+    pub path: String,
+    pub hash: String,
+    pub size: u64,
+}

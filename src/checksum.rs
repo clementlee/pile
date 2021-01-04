@@ -2,8 +2,9 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io;
 use std::io::Result;
+use std::path::Path;
 
-pub fn hash_file(path: &std::path::Path) -> Result<String> {
+pub fn hash_file(path: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
 
     let mut file = File::open(path)?;
