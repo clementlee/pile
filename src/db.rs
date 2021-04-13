@@ -1,52 +1,101 @@
-use core::result::Result;
+use anyhow::{anyhow, Context, Result};
 use indicatif::ProgressIterator;
 use rusqlite::{params, Connection};
 use shellexpand;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    types::{File, StorageLocation},
+    types::{File, Pile},
     PILE_ROOT,
 };
 
 /// initialize the database. create tables if necessary
-pub fn init_db(name: &str) -> Result<(), String> {
-    let path = pile_path(name);
-    let path = path.as_path();
-
-    if Path::exists(path) {
-        Err(format!("Pile with the name \"{}\" already exists.", name))
+pub fn init_db() -> Result<()> {
+    if Path::exists(&pile_path()) {
+        // TODO: verify schema or something
+        Ok(())
     } else {
-        match create_db(path) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("{:?}", e)),
-        }
+        create_db()
     }
 }
 
-fn pile_path(name: &str) -> PathBuf {
-    let filename = format!("{}/{}.pile", PILE_ROOT, name);
+pub fn get_pile(name: &str) -> Result<Pile> {
+    let conn = get_db()?;
+
+    let mut stmt = conn.prepare("SELECT name FROM pile WHERE name = ?1")?;
+    let iter = stmt.query_map(params![name], |row| Ok(Pile { name: row.get(0)? }))?;
+    let mut iter = iter.filter_map(|res| res.ok());
+
+    // only grab the first one
+    let pile = iter.next();
+
+    match pile {
+        Some(pile) => Ok(pile),
+        None => Err(anyhow!("No pile of name {} found", name)),
+    }
+}
+
+pub fn pile_exists(name: &str) -> bool {
+    get_pile(name).is_ok()
+}
+
+pub fn add_pile(pile: &Pile) -> Result<()> {
+    let conn = get_db()?;
+
+    conn.execute("INSERT INTO pile (name) VALUES (?1)", params![pile.name])?;
+
+    Ok(())
+}
+
+pub fn add_files(name: &str, files: &Vec<File>) -> Result<()> {
+    let conn = get_db()?;
+
+    for file in files.into_iter().progress() {
+        conn.execute(
+            "INSERT INTO file (path, hash, pile) VALUES (?1, ?2, ?3)",
+            params![file.path, file.hash, name],
+        )
+        .context(format!("Couldn't save file {:?}", file))?;
+    }
+
+    Ok(())
+}
+
+fn get_db() -> Result<Connection> {
+    Ok(Connection::open(pile_path())?)
+}
+
+fn pile_path() -> PathBuf {
+    let filename = format!("{}/pile.db", PILE_ROOT);
     let filename = shellexpand::tilde(&filename);
     let filename = filename.into_owned();
 
     PathBuf::from(filename)
 }
 
-pub fn pile_exists(name: &str) -> bool {
-    Path::exists(pile_path(name).as_path())
-}
+fn create_db() -> Result<()> {
+    let conn = get_db()?;
 
-fn create_db(path: &Path) -> rusqlite::Result<()> {
-    let conn = Connection::open(path)?;
+    conn.execute(
+        "CREATE TABLE pile (
+            name        TEXT PRIMARY KEY
+        )",
+        [],
+    )
+    .context("Failed to create pile table")?;
 
     // why are hashes text? because I don't want to figure out the BLOB type
     conn.execute(
         "CREATE TABLE file (
-            path        TEXT PRIMARY KEY,
-            hash        TEXT NOT NULL
+            path        TEXT NOT NULL,
+            hash        TEXT NOT NULL,
+            pile        TEXT NOT NULL,
+            PRIMARY KEY (path, pile),
+            FOREIGN KEY (pile) REFERENCES pile (name)
         )",
-        params![],
-    )?;
+        [],
+    )
+    .context("Failed to create file table")?;
 
     conn.execute(
         "CREATE TABLE backup (
@@ -54,32 +103,9 @@ fn create_db(path: &Path) -> rusqlite::Result<()> {
             path                    TEXT NOT NULL,
             FOREIGN KEY (path) REFERENCES file (path)
         )",
-        params![],
-    )?;
+        [],
+    )
+    .context("Failed to create backup table")?;
 
     Ok(())
-}
-
-pub fn add_files(name: &str, files: &Vec<File>) -> rusqlite::Result<()> {
-    let path = pile_path(name);
-    let path = path.as_path();
-
-    let conn = Connection::open(path)?;
-
-    files.into_iter().progress().for_each(|f| {
-        conn.execute(
-            "INSERT INTO file (path, hash) VALUES (?1, ?2)",
-            params![f.path, f.hash],
-        )
-        .expect(&format!("Couldn't save file {:?}", f));
-    });
-
-    Ok(())
-}
-
-pub fn generate_storage_candidates(
-    space: u64,
-    locations: Vec<StorageLocation>,
-) -> Vec<StorageLocation> {
-    locations.into_iter().map(|s| s.size)
 }
