@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use indicatif::ProgressIterator;
 use rusqlite::{params, Connection};
 use shellexpand;
 use std::path::{Path, PathBuf};
@@ -50,9 +49,13 @@ pub fn add_pile(pile: &Pile) -> Result<()> {
 pub fn add_files(name: &str, files: &Vec<File>) -> Result<()> {
     let conn = get_db()?;
 
-    for file in files.into_iter().progress() {
+    for file in files.iter() {
         conn.execute(
-            "INSERT INTO file (path, hash, pile) VALUES (?1, ?2, ?3)",
+            "INSERT INTO file (path, hash, pile) VALUES (?1, ?2, ?3)
+                ON CONFLICT(path, pile) DO UPDATE SET 
+                path = ?1,
+                hash = ?2,
+                pile = ?3",
             params![file.path, file.hash, name],
         )
         .context(format!("Couldn't save file {:?}", file))?;

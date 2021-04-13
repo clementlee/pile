@@ -1,16 +1,19 @@
 mod checksum;
 mod db;
+mod fs_tools;
 mod types;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use byte_unit::Byte;
 use checksum::hash_file;
 use clap::Clap;
 use db::{add_files, add_pile, init_db, pile_exists};
-use indicatif::ProgressIterator;
-use log::{debug, error};
-use std::{fs, path::Path};
-use types::{Config, File, Pile};
+use log::{debug, error, info};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+use types::{Config, Drive, File, Pile};
 use walkdir::{DirEntry, WalkDir};
 
 const PILE_ROOT: &str = "~/.pile/";
@@ -20,9 +23,6 @@ const PILE_ROOT: &str = "~/.pile/";
 struct Opts {
     #[clap(subcommand)]
     cmd: SubCommand,
-
-    #[clap(short, long)]
-    verbose: bool,
 }
 
 #[derive(Clap, Debug)]
@@ -63,8 +63,6 @@ fn main() -> Result<()> {
     let config = fs::read_to_string(config_path).context("Could not read config")?;
     let config: Config = toml::from_str(&config).context("Could not deserialize config")?;
 
-    debug!("{:?}", Path::new("foo///asdf///t/w/w/e").to_str().unwrap());
-
     debug!("Available storage locations: {:?}", config.drives);
 
     init_db()?;
@@ -73,7 +71,7 @@ fn main() -> Result<()> {
         SubCommand::Add(addcmd) => {
             if pile_exists(&addcmd.name) {
                 // TODO: allow adding to existing pile (ask for user confirmation)
-                error!("Pile \"{}\" already exists", &addcmd.name)
+                info!("Pile \"{}\" already exists", &addcmd.name)
             } else {
                 let pile = Pile {
                     name: addcmd.name.clone(),
@@ -89,48 +87,48 @@ fn main() -> Result<()> {
                 .filter(|e| e.path().is_file())
                 .collect();
 
-            println!("Calculating file usage...");
+            info!("Calculating file usage...");
 
-            let files: Result<Vec<File>, Error> = files
+            let files: Vec<File> = files
                 .into_iter()
-                .progress()
                 .map(|e| {
                     let path = e.path().strip_prefix(&addcmd.path)?;
-                    let path = path.to_str().ok_or("Failed to decode path as string?");
-                    let path = path.map_err(anyhow::Error::msg)?;
-                    debug!("{}", path);
+                    let path = path
+                        .to_str()
+                        .ok_or(anyhow!("Failed to decode path as string?"))?;
                     Ok(File {
                         path: path.to_string(),
                         hash: hash_file(e.path())?,
                         size: e.metadata()?.len(),
                     })
                 })
-                .collect();
-            let files = files?;
+                .collect::<Result<Vec<File>, Error>>()?;
 
-            println!("Adding files to database...");
             add_files(&addcmd.name, &files).context("Unable to add all files")?;
 
-            let total_storage: u64 = files.into_iter().map(|f| f.size).sum();
+            let total_storage: u64 = files.iter().map(|f| f.size).sum();
             let total_bytes = Byte::from_bytes(total_storage.into());
-            println!(
+            info!(
                 "Total file usage is {}",
                 total_bytes.get_appropriate_unit(true).to_string()
             );
 
-            // let best_locations: Vec<Drive> = config
-            //     .drive
-            //     .into_iter()
-            //     .filter(|location| {
-            //         let total_bytes = Byte::from_str(location.size.clone()).unwrap();
+            let best_locations: Vec<Drive> = config
+                .drives
+                .into_iter()
+                .filter_map(|drive| {
+                    debug!("Checking likely space for drive {}", &drive.name);
 
-            //         //location.mountpoint
-            //         true
-            //     })
-            //     .collect();
+                    let bytes = fs_tools::get_drive_capacity(&drive).ok()?;
+
+                    Some(drive)
+                    //location.mountpoint
+                })
+                .collect();
         }
         SubCommand::Verify(_verifycmd) => {
             error!("Not implemented");
+            panic!("actually no let's die for now");
         }
     }
 
