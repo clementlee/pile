@@ -28,6 +28,7 @@ struct Opts {
 #[derive(Clap, Debug)]
 enum SubCommand {
     Add(AddCommand),
+    Find(FindCommand),
     Verify(VerifyCommand),
 }
 
@@ -41,6 +42,9 @@ struct AddCommand {
     #[clap(short, long)]
     path: String,
 }
+
+#[derive(Clap, Debug)]
+struct FindCommand {}
 
 #[derive(Clap, Debug)]
 struct VerifyCommand {}
@@ -71,7 +75,8 @@ fn main() -> Result<()> {
         SubCommand::Add(addcmd) => {
             if pile_exists(&addcmd.name) {
                 // TODO: allow adding to existing pile (ask for user confirmation)
-                info!("Pile \"{}\" already exists", &addcmd.name)
+                error!("Pile \"{}\" already exists", &addcmd.name);
+                todo!("Adding to existing pile isn't implemented yet")
             } else {
                 let pile = Pile {
                     name: addcmd.name.clone(),
@@ -127,8 +132,10 @@ fn main() -> Result<()> {
                 .collect();
         }
         SubCommand::Verify(_verifycmd) => {
-            error!("Not implemented");
-            panic!("actually no let's die for now");
+            todo!()
+        }
+        SubCommand::Find(_findcmd) => {
+            todo!()
         }
     }
 

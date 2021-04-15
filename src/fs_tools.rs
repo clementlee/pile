@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
-
 use crate::types::Drive;
 use anyhow::Result;
 use byte_unit::Byte;
 use log::debug;
+use std::path::{Path, PathBuf};
 
-const QUOTA: f64 = 0.9;
+/// TODO: make this configurable
+const QUOTA: f64 = 0.95;
 
 pub fn get_drive_capacity(drive: &Drive) -> Result<Byte> {
     let expanded = shellexpand::tilde(&drive.mountpoint);

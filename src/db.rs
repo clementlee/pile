@@ -77,9 +77,11 @@ fn pile_path() -> PathBuf {
 }
 
 fn create_db() -> Result<()> {
-    let conn = get_db()?;
+    let mut conn = get_db()?;
 
-    conn.execute(
+    let tx = conn.transaction()?;
+
+    tx.execute(
         "CREATE TABLE pile (
             name        TEXT PRIMARY KEY
         )",
@@ -88,7 +90,7 @@ fn create_db() -> Result<()> {
     .context("Failed to create pile table")?;
 
     // why are hashes text? because I don't want to figure out the BLOB type
-    conn.execute(
+    tx.execute(
         "CREATE TABLE file (
             path        TEXT NOT NULL,
             hash        TEXT NOT NULL,
@@ -100,7 +102,7 @@ fn create_db() -> Result<()> {
     )
     .context("Failed to create file table")?;
 
-    conn.execute(
+    tx.execute(
         "CREATE TABLE backup (
             storage_location        TEXT NOT NULL,
             path                    TEXT NOT NULL,
@@ -109,6 +111,8 @@ fn create_db() -> Result<()> {
         [],
     )
     .context("Failed to create backup table")?;
+
+    tx.commit()?;
 
     Ok(())
 }
