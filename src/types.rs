@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 /// The config
@@ -15,6 +17,13 @@ pub struct Drive {
     pub size: String,
 }
 
+impl Drive {
+    pub fn is_mounted(&self) -> bool {
+        Path::new(&self.mountpoint).exists()
+    }
+}
+
+/// A Pile is a dataset containing files.
 #[derive(Debug)]
 pub struct Pile {
     pub name: String,

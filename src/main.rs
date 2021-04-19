@@ -70,12 +70,20 @@ fn main() -> Result<()> {
     debug!("Available storage locations: {:?}", config.drives);
 
     init_db()?;
+    for drive in &config.drives {
+        debug!(
+            "BTW, usage of drive {} is {}",
+            drive.name,
+            db::get_usage(&drive)?
+        );
+    }
 
     match opts.cmd {
         SubCommand::Add(addcmd) => {
             if pile_exists(&addcmd.name) {
                 // TODO: allow adding to existing pile (ask for user confirmation)
                 error!("Pile \"{}\" already exists", &addcmd.name);
+
                 todo!("Adding to existing pile isn't implemented yet")
             } else {
                 let pile = Pile {
@@ -84,30 +92,7 @@ fn main() -> Result<()> {
                 add_pile(&pile)?;
             }
 
-            // first, analyze the directory to see storage usage
-            let files: Vec<DirEntry> = WalkDir::new(&addcmd.path)
-                .follow_links(true)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_file())
-                .collect();
-
-            info!("Calculating file usage...");
-
-            let files: Vec<File> = files
-                .into_iter()
-                .map(|e| {
-                    let path = e.path().strip_prefix(&addcmd.path)?;
-                    let path = path
-                        .to_str()
-                        .ok_or(anyhow!("Failed to decode path as string?"))?;
-                    Ok(File {
-                        path: path.to_string(),
-                        hash: hash_file(e.path())?,
-                        size: e.metadata()?.len(),
-                    })
-                })
-                .collect::<Result<Vec<File>, Error>>()?;
+            let files = get_files(&addcmd.path)?;
 
             add_files(&addcmd.name, &files).context("Unable to add all files")?;
 
@@ -142,4 +127,50 @@ fn main() -> Result<()> {
     //db::init_db()?;
 
     Ok(())
+}
+
+fn get_files(path: &str) -> Result<Vec<File>> {
+    // first, analyze the directory to see storage usage
+    let files: Vec<DirEntry> = WalkDir::new(&path)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .collect();
+
+    info!("Calculating file usage...");
+
+    let files: Vec<File> = files
+        .into_iter()
+        .map(|e| {
+            let path = e.path().strip_prefix(&path)?;
+            let path = path
+                .to_str()
+                .ok_or(anyhow!("Failed to decode path as string?"))?;
+            Ok(File {
+                path: path.to_string(),
+                hash: hash_file(e.path())?,
+                size: e.metadata()?.len(),
+            })
+        })
+        .collect::<Result<Vec<File>, Error>>()?;
+
+    Ok(files)
+}
+
+fn get_drive_suggestions(bytes_required: u64, config: &Config) -> Result<Vec<&Drive>> {
+    let best_locations: Vec<&Drive> = config
+        .drives
+        .iter()
+        .filter_map(|drive| {
+            debug!("Checking likely space for drive {}", &drive.name);
+
+            let bytes = fs_tools::get_drive_capacity(&drive).ok()?;
+
+            Some(drive)
+            //location.mountpoint
+        })
+        .collect();
+
+    Ok(best_locations)
 }

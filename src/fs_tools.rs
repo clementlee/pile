@@ -7,20 +7,20 @@ use std::path::{Path, PathBuf};
 /// TODO: make this configurable
 const QUOTA: f64 = 0.95;
 
-pub fn get_drive_capacity(drive: &Drive) -> Result<Byte> {
+pub fn get_drive_capacity(drive: &Drive) -> Result<u64> {
     let expanded = shellexpand::tilde(&drive.mountpoint);
     let drive_path = PathBuf::from(expanded.into_owned());
 
-    let drive_space: Result<Byte> = match Path::exists(&drive_path) {
+    let drive_space: Result<u64> = match drive.is_mounted() {
         true => {
-            debug!("loading real size for drive \"{}\"", &drive.name);
-            Ok(Byte::from_bytes(fs2::available_space(&drive_path)? as u128))
+            debug!("Loading real size for drive \"{}\"", &drive.name);
+            Ok(fs2::available_space(&drive_path)?)
         }
         false => {
-            debug!("using estimated size for drive \"{}\"", &drive.name);
+            debug!("Using estimated size for drive \"{}\"", &drive.name);
             let location_bytes = Byte::from_str(&drive.size)?;
 
-            Ok(location_bytes)
+            Ok(location_bytes.get_bytes() as u64)
         }
     };
 
@@ -29,11 +29,11 @@ pub fn get_drive_capacity(drive: &Drive) -> Result<Byte> {
     Ok(drive_space)
 }
 
-fn apply_quota(bytes: Byte, quota: f64) -> Byte {
+fn apply_quota(bytes: u64, quota: f64) -> u64 {
     assert!(0.0 <= quota && quota <= 1.0);
 
-    let bytes = bytes.get_bytes() as f64;
+    let bytes = bytes as f64;
     let bytes = bytes * quota;
 
-    Byte::from_bytes(bytes as u128)
+    bytes as u64
 }
