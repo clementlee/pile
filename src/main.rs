@@ -8,15 +8,14 @@ use byte_unit::Byte;
 use checksum::hash_file;
 use clap::Clap;
 use db::{add_files, add_pile, init_db, pile_exists};
+use dialoguer::Confirm;
 use log::{debug, error, info};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 use types::{Config, Drive, File, Pile};
 use walkdir::{DirEntry, WalkDir};
 
 const PILE_ROOT: &str = "~/.pile/";
+const BACKUPS: usize = 1; // TODO make this configurable
 
 /// test doc
 #[derive(Clap, Debug)]
@@ -103,18 +102,33 @@ fn main() -> Result<()> {
                 total_bytes.get_appropriate_unit(true).to_string()
             );
 
-            let best_locations: Vec<Drive> = config
-                .drives
-                .into_iter()
-                .filter_map(|drive| {
-                    debug!("Checking likely space for drive {}", &drive.name);
+            let mut best_locations: Vec<&Drive> = get_drive_suggestions(total_storage, &config)?;
 
-                    let bytes = fs_tools::get_drive_capacity(&drive).ok()?;
+            while !Confirm::new()
+                .with_prompt(format!(
+                    "Using locations: {:?}",
+                    best_locations
+                        .iter()
+                        .map(|&drive| &drive.name)
+                        .collect::<Vec<&String>>()
+                ))
+                .interact()?
+            {
+                // TODO figure out prompt
+            }
 
-                    Some(drive)
-                    //location.mountpoint
-                })
-                .collect();
+            for drive in best_locations {
+                while !drive.is_mounted() {
+                    Confirm::new()
+                        .with_prompt(format!(
+                            "Drive {} isn't mounted at \"{}\"",
+                            drive.name, drive.mountpoint
+                        ))
+                        .interact()?;
+                }
+
+                // copy
+            }
         }
         SubCommand::Verify(_verifycmd) => {
             todo!()
@@ -159,7 +173,7 @@ fn get_files(path: &str) -> Result<Vec<File>> {
 }
 
 fn get_drive_suggestions(bytes_required: u64, config: &Config) -> Result<Vec<&Drive>> {
-    let best_locations: Vec<&Drive> = config
+    let mut best_locations: Vec<(&Drive, u64)> = config
         .drives
         .iter()
         .filter_map(|drive| {
@@ -167,10 +181,25 @@ fn get_drive_suggestions(bytes_required: u64, config: &Config) -> Result<Vec<&Dr
 
             let bytes = fs_tools::get_drive_capacity(&drive).ok()?;
 
-            Some(drive)
-            //location.mountpoint
+            let usage = db::get_usage(&drive).ok()?;
+
+            let free_space = bytes - usage;
+
+            if free_space >= bytes_required {
+                Some((drive, free_space))
+            } else {
+                None
+            }
         })
         .collect();
 
+    best_locations.sort_by_key(|(_drive, free_space)| *free_space);
+    best_locations.reverse();
+
+    let best_locations: Vec<&Drive> = best_locations
+        .iter()
+        .take(BACKUPS)
+        .map(|(drive, _free_space)| *drive)
+        .collect();
     Ok(best_locations)
 }

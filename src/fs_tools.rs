@@ -2,7 +2,7 @@ use crate::types::Drive;
 use anyhow::Result;
 use byte_unit::Byte;
 use log::debug;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// TODO: make this configurable
 const QUOTA: f64 = 0.95;
